@@ -1,6 +1,7 @@
 from taskset import TaskSet
 from resourceset import ResourceSet
 from scheduler import Scheduler
+from scheduler_dm import SchedulerDM
 from schedule_display import ScheduleDisplay
 
 datajson = {
@@ -9,7 +10,7 @@ datajson = {
             "Name": "T1",
             "O": 0,
             "Phases": [
-                {"Type": "Memory", "Duration": 2, "Premption": False},
+                {"Type": "Memory", "Duration": 2, "Premption": True},
                 {"Type": "Processor", "Duration": 4, "Premption": True},
                 {"Type": "Memory", "Duration": 1, "Premption": True},
             ],
@@ -33,7 +34,7 @@ resources = ResourceSet(datajson["resources"])
 # print(tasks)
 # print(resources)
 max_time = 40
-scheduler = Scheduler(tasks, resources, premption_processor=True, premption_memory=True)
+scheduler = SchedulerDM(tasks, resources, premption_processor=True, premption_memory=True)
 scheduler.schedule(max_time)
 schedule = scheduler.schedule_result
 #print(schedule)

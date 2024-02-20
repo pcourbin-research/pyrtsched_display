@@ -3,8 +3,9 @@ from taskset import TaskSet
 from task import Task
 from resource import ResourceType, Resource
 from resourceset import ResourceSet
+from abc import ABC, abstractmethod
 
-class Scheduler:
+class Scheduler(ABC):
     _taskset = None
     _resourceset = None
     _schedule_result = None
@@ -26,8 +27,12 @@ class Scheduler:
         schema_schedule_result={'Task': 'string', 'Start': 'int', 'Finish': 'int', 'Resource': 'string', 'Missed': 'string'}
         self._schedule_result = pd.DataFrame(columns=schema_schedule_result.keys()).astype(schema_schedule_result)
 
+    @abstractmethod
+    def _next_task_scheduler(self, resource: Resource, tasks_to_execute: list[str]) -> str: # Task name selected for execution on the resource
+        pass
 
-    def _next_task(self, resource) -> Task:
+
+    def _next_task(self, resource: Resource) -> str: # Task name selected for execution on the resource
         #DM
         resource_type = resource.type
         tasks_to_execute = self._schedule_current[(self._schedule_current["Request"] > 0) & (self._schedule_current["Executed"] == False)].index.tolist()
@@ -35,18 +40,10 @@ class Scheduler:
         # Non-preemptive resource
         task_selected_non_premptive = self._schedule_current[(self._schedule_current["NonPreemptiveResource"] == resource.name) & (self._schedule_current["Request"] > 0) & (self._schedule_current["Executed"] == False)].index.tolist()
         if (len(task_selected_non_premptive) > 0):
-            print("Non-preemptive resource"+resource.name+" selected for task "+task_selected_non_premptive[0])
+            #print("Non-preemptive resource"+resource.name+" selected for task "+task_selected_non_premptive[0])
             task_selected = task_selected_non_premptive[0]
         else:
-            min_deadline = -1
-            task_selected = None
-            for task_name in tasks_to_execute:
-                task = self._taskset.get_task(task_name)
-                task_phase = self._schedule_current.loc[task_name]["Phase"]
-                task_resource_type = task.phases[task_phase].ressource_type
-                if ((min_deadline == -1 or task.deadline < min_deadline) and task_resource_type == resource_type):
-                    min_deadline = task.deadline
-                    task_selected = task_name
+            task_selected = self._next_task_scheduler(resource, tasks_to_execute)
                 
         return task_selected
     
