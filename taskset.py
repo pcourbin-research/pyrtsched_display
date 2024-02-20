@@ -24,9 +24,9 @@ class TaskSet:
                         premption = phase["Premption"]
                     task.add_phase(type, duration, premption)
             elif ("R" in task_data.keys() and "E" in task_data.keys() and "W" in task_data.keys()):
-                task.add_phase(ResourceType.Memory, task_data["R"], False)
+                task.add_phase(ResourceType.Memory, task_data["R"], True)
                 task.add_phase(ResourceType.Processor, task_data["E"], True)
-                task.add_phase(ResourceType.Memory, task_data["W"], False)
+                task.add_phase(ResourceType.Memory, task_data["W"], True)
 
             self._tasks.append(task)
 

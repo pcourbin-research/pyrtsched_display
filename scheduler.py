@@ -8,36 +8,45 @@ class Scheduler:
     _taskset = None
     _resourceset = None
     _schedule_result = None
-    _premption_processor = True
-    _premption_memory = False
+    _premption = {
+        ResourceType.Processor : True,
+        ResourceType.Memory: True
+    }
     _schedule_current = None
 
-    def __init__(self, taskset, resourceset, premption_processor=True, premption_memory=False):
+    def __init__(self, taskset, resourceset, premption_processor=True, premption_memory=True):
         self._taskset = taskset
         self._resourceset = resourceset
-        self._premption_processor = premption_processor
-        self._premption_memory = premption_memory
+        self._premption[ResourceType.Processor] = premption_processor
+        self._premption[ResourceType.Memory] = premption_memory
 
-        schema_schedule_current={'Task': 'string', 'Phase': 'int', 'Request': 'int', 'Executed': 'bool'}
+        schema_schedule_current={'Task': 'string', 'Phase': 'int', 'Request': 'int', 'Executed': 'bool', 'NonPreemptiveResource': 'string'}
         self._schedule_current = pd.DataFrame(columns=schema_schedule_current.keys()).astype(schema_schedule_current)
         
         schema_schedule_result={'Task': 'string', 'Start': 'int', 'Finish': 'int', 'Resource': 'string', 'Missed': 'string'}
         self._schedule_result = pd.DataFrame(columns=schema_schedule_result.keys()).astype(schema_schedule_result)
 
 
-    def _next_task(self, resource_type) -> Task:
+    def _next_task(self, resource) -> Task:
         #DM
+        resource_type = resource.type
         tasks_to_execute = self._schedule_current[(self._schedule_current["Request"] > 0) & (self._schedule_current["Executed"] == False)].index.tolist()
 
-        min_deadline = -1
-        task_selected = None
-        for task_name in tasks_to_execute:
-            task = self._taskset.get_task(task_name)
-            task_phase = self._schedule_current.loc[task_name]["Phase"]
-            task_resource_type = task.phases[task_phase].ressource_type
-            if ((min_deadline == -1 or task.deadline < min_deadline) and task_resource_type == resource_type):
-                min_deadline = task.deadline
-                task_selected = task_name
+        # Non-preemptive resource
+        task_selected_non_premptive = self._schedule_current[(self._schedule_current["NonPreemptiveResource"] == resource.name) & (self._schedule_current["Request"] > 0) & (self._schedule_current["Executed"] == False)].index.tolist()
+        if (len(task_selected_non_premptive) > 0):
+            print("Non-preemptive resource"+resource.name+" selected for task "+task_selected_non_premptive[0])
+            task_selected = task_selected_non_premptive[0]
+        else:
+            min_deadline = -1
+            task_selected = None
+            for task_name in tasks_to_execute:
+                task = self._taskset.get_task(task_name)
+                task_phase = self._schedule_current.loc[task_name]["Phase"]
+                task_resource_type = task.phases[task_phase].ressource_type
+                if ((min_deadline == -1 or task.deadline < min_deadline) and task_resource_type == resource_type):
+                    min_deadline = task.deadline
+                    task_selected = task_name
                 
         return task_selected
     
@@ -51,16 +60,17 @@ class Scheduler:
 
         for t in range(max_time):
             self._schedule_current["Executed"] = False
-            # Update schedule current with new task activations
+            # Update schedule current with new task activations. If old task is not finished, it will be stopped and restarted (no arbitrary deadlines for now). Add line for new task?
             for task in self._taskset.tasks:
                 if (t - task.first_activation) % task.period == 0:
                     self._schedule_current.loc[task.name, "Phase"] = 0
                     self._schedule_current.loc[task.name, "Request"] += task.phases[0].duration
                     self._schedule_current.loc[task.name, "Executed"] = False
+                    self._schedule_current.loc[task.name, "NonPreemptiveResource"] = ""
 
             # Get list of tasks to execute
             for resource in self._resourceset.resources:
-                task_selected = self._next_task(resource.type)
+                task_selected = self._next_task(resource)
                 if task_selected is not None:
                     task = self._taskset.get_task(task_selected)
                     task_phase = self._schedule_current.loc[task_selected]["Phase"]
@@ -69,11 +79,15 @@ class Scheduler:
                         self._schedule_current.loc[task_selected, "Request"] -= 1
                         self._schedule_current.loc[task_selected, "Executed"] = True
                         self._schedule_result = pd.concat([self._schedule_result, pd.DataFrame([dict(Task=task_selected, Start=t, Finish=t+1, Resource=resource.name, Missed="")])])
+
+                        if (task.phases[task_phase].premption == False or (self._premption[task.phases[task_phase].ressource_type] == False)):
+                            self._schedule_current.loc[task_selected, "NonPreemptiveResource"] = resource.name
                         
                         # Update schedule current with next task phase if task phase is completed
                         if self._schedule_current.loc[task.name, "Request"] == 0 and (task_phase + 1) < len(task.phases):
                             self._schedule_current.loc[task.name, "Phase"] = (task_phase + 1)
                             self._schedule_current.loc[task.name, "Request"] = task.phases[(task_phase + 1)].duration
+                            self._schedule_current.loc[task_selected, "NonPreemptiveResource"] = ""
                             
 
             # Check for missed deadlines
