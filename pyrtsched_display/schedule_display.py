@@ -1,11 +1,10 @@
 # https://plotly.com/python/gantt/
 import plotly.express as px
-import plotly.graph_objects as go
 import pandas as pd
-from plotly.subplots import make_subplots
 import plotly.io as pio
 import pathlib
 import os
+from . import Scheduler
 
 class ScheduleDisplay:
 
@@ -22,6 +21,9 @@ class ScheduleDisplay:
     def __init__(self, max_time=40, render="browser"):
         self._max_time = max_time
         pio.renderers.default = render
+
+    def update_from_scheduler(self, scheduler: Scheduler):
+        self.update(scheduler.taskset.get_taskset_as_dataframe(), scheduler.resourceset.get_resourceset_as_dataframe(), scheduler.schedule_result)
 
     def update(self, tasks: pd.DataFrame, resources: pd.DataFrame, schedule: pd.DataFrame):
         self._tasks = tasks.copy()
@@ -108,15 +110,15 @@ class ScheduleDisplay:
 
     def fig_generate(self):
         # Plots Timelines
-        hovertemplate_task = "<b>%{base|%S%4f} - %{x|%S%4f}</b><br>%{y} on %{customdata[0]} (%{customdata[1]})<br><extra></extra>"
+        hovertemplate_task = "<b>%{base|%S%4f} - %{x|%S%4f}</b><br>Job %{customdata[3]} of %{y} on %{customdata[0]} (%{customdata[1]})<br>Phase %{customdata[4]}/%{customdata[6]}, Request remaining: %{customdata[5]}/%{customdata[7]}<extra></extra>"
         tasks_plot = px.timeline(self._schedule, x_start="Start", x_end="Finish", y="Task", color="Task", 
                         pattern_shape="Resource_Type", pattern_shape_map={"Memory": "x", "Processor": ""}, 
-                        custom_data=["Resource", "Resource_Type", "Missed"])
+                        custom_data=["Resource", "Resource_Type", "Missed", "Job", "Phase", "RequestPhaseRemaining", "TotalPhase", "TotalRequestPhase"])
 
-        hovertemplate_ressource = "<b>%{base|%S%4f} - %{x|%S%4f}</b><br>%{y} (%{customdata[1]}) execute %{customdata[0]} <br><extra></extra>"
+        hovertemplate_ressource = "<b>%{base|%S%4f} - %{x|%S%4f}</b><br>%{y} (%{customdata[1]}) execute Job %{customdata[3]} of %{customdata[0]} <br><extra></extra>"
         resources_plot = px.timeline(self._schedule, x_start="Start", x_end="Finish", y="Resource", color="Task", 
                         pattern_shape="Resource_Type", pattern_shape_map={"Memory": "x", "Processor": ""}, 
-                        custom_data=["Task", "Resource_Type", "Missed"])
+                        custom_data=["Task", "Resource_Type", "Missed", "Job"])
 
         tasks_plot.update_layout(
             showlegend=True,
@@ -151,18 +153,23 @@ class ScheduleDisplay:
         fig = self.fig
         ext = pathlib.Path(path).suffix
         dir_path = os.path.dirname(path)
+        if (dir_path == ""):
+            dir_path = "./"
 
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
 
         if (ext.lower() in [".html", ".htm"]):
             fig.write_html(path)
-        else: # png, webp, jpeg,pdf, svg, eps
-            
-            fig.update_layout(
+        else: # png, webp, jpeg, pdf, svg, eps
+            """fig.update_layout(
                 autosize = False,
                 width = self._max_time*40,
                 height = (len(self._tasks) + len(self._resources) + 1) * 140
+            )"""
+
+            fig.update_layout(
+                autosize = True
             )
         
             fig.write_image(path)

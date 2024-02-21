@@ -1,6 +1,6 @@
 import json
-from resource import ResourceType, Resource
 import pandas as pd
+from . import ResourceType, Resource
 
 class ResourceSet:
     _resources = []

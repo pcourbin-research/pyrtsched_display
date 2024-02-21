@@ -1,7 +1,7 @@
 import json
-from resource import ResourceType
-from task import Task
 import pandas as pd
+from . import ResourceType
+from . import Task
 
 class TaskSet:
     _tasks = []

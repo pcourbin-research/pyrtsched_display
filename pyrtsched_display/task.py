@@ -1,4 +1,4 @@
-from resource import ResourceType
+from . import ResourceType
 
 class TaskPhase:
     _ressource_type = ResourceType.Processor
