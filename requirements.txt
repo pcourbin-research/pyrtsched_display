@@ -5,6 +5,10 @@ kaleido
 openpyxl
 flask
 dash 
+dash[celery]
+dash[diskcache]
+dash-bootstrap-components
 dash-core-components 
 dash-html-components 
 dash-renderer
+gunicorn

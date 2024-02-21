@@ -84,7 +84,6 @@ class Scheduler(ABC):
             data_json["premption_memory"] = data_json["premption_memory"]=="True"
         self._premption[ResourceType.Processor] = data_json["premption_processor"]
         self._premption[ResourceType.Memory] = data_json["premption_memory"]
-        print(self._premption[ResourceType.Memory])
         self._restart_schedule()
 
     @abstractmethod
