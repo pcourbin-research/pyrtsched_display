@@ -1,0 +1,11 @@
+version: '3.7'
+services:
+
+   dashboard:
+     build: 
+       context: ./
+     container_name: pyrtsched_display_dashboard      
+     hostname: pyrtsched_display_dashboard
+     restart: always
+     ports:
+       - 5000:8050
