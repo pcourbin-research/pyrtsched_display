@@ -78,8 +78,13 @@ class Scheduler(ABC):
     def configure_json(self, data_json: dict):
         self._taskset = TaskSet(data_json["tasks"])
         self._resourceset = ResourceSet(data_json["resources"])
+        if (isinstance(data_json["premption_processor"], str)):
+            data_json["premption_processor"] = data_json["premption_processor"]=="True"
+        if (isinstance(data_json["premption_memory"], str)):
+            data_json["premption_memory"] = data_json["premption_memory"]=="True"
         self._premption[ResourceType.Processor] = data_json["premption_processor"]
         self._premption[ResourceType.Memory] = data_json["premption_memory"]
+        print(self._premption[ResourceType.Memory])
         self._restart_schedule()
 
     @abstractmethod

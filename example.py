@@ -44,4 +44,4 @@ graph.update_from_scheduler(scheduler)
 graph.fig.show()
 
 # Save the schedule to html file
-graph.fig_save("schedule.html")
+#graph.fig_save("schedule.html")
