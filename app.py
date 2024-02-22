@@ -43,7 +43,7 @@ app.layout = html.Div([
         }""",
         style={'width': '100%', 'height': 200, 'font-size': '90%',},
     ),
-    dbc.Progress(id="progress", value=0, color="success", className="mb-3", style={"height": "20px"}),
+    dbc.Progress(id="progress", value=0, color="success", className="mb-3", animated=False, style={"height": "20px"}),
     dbc.Button("See Scheduling", id='see_schedule_button', color="primary", className="me-1"),
     dbc.Button("Cancel Scheduling !", id='cancel_see_schedule_button', color="secondary", className="me-1", disabled=True),
     dbc.Button([html.I(className="fa-solid fa-file-excel")," Download Schedule"], id='excel_schedule_button', color="primary", outline=True, className="me-1"),
@@ -86,12 +86,12 @@ def prepare_schedule(json_value: dict) -> Scheduler:
     return scheduler
 
 @callback(
-    Output("progress", "value"), Output("progress", "max"), Output("progress", "label"),
+    Output("progress", "value"), Output("progress", "max"), Output("progress", "label"), Output("progress", "animated"),
     Input('cancel_see_schedule_button', 'n_clicks'),
     prevent_initial_call=True,
 )
 def cancel_display_graph(n_clicks):
-    return str(0), str(3), "Waiting..."
+    return str(0), str(3), "Waiting...", False
     
 @callback(
     Output('graph', 'figure'),
@@ -103,13 +103,13 @@ def cancel_display_graph(n_clicks):
         (Output("cancel_see_schedule_button", "disabled"), False, True),
     ],
     cancel=Input("cancel_see_schedule_button", "n_clicks"),
-    progress=[Output("progress", "value"), Output("progress", "max"), Output("progress", "label")],
+    progress=[Output("progress", "value"), Output("progress", "max"), Output("progress", "label"), Output("progress", "animated")],
     prevent_initial_call=True,
 )
 def display_graph(set_progress, n_clicks, value):
     total_progress = 3
     current_progress = 0
-    set_progress((str(current_progress), str(total_progress), "Read JSON..."))
+    set_progress((str(current_progress), str(total_progress), "Read JSON...", True))
 
     graphJSON = {}
     if n_clicks > 0:
@@ -119,13 +119,13 @@ def display_graph(set_progress, n_clicks, value):
             json_value = read_schedule_json(value)
 
             current_progress += 1
-            set_progress((str(current_progress), str(total_progress), "Generate Schedule..."))
+            set_progress((str(current_progress), str(total_progress), "Generate Schedule...", True))
 
             max_time = json_value["max_time"]
             scheduler = prepare_schedule(json_value)
 
             current_progress += 1
-            set_progress((str(current_progress), str(total_progress), "Generate Graph..."))
+            set_progress((str(current_progress), str(total_progress), "Generate Graph...", True))
 
             # Prepare the schedule for display
             graph = ScheduleDisplay(max_time=max_time, render="browser")
@@ -133,7 +133,7 @@ def display_graph(set_progress, n_clicks, value):
             graphJSON = graph.fig
 
             current_progress += 1
-            set_progress((str(current_progress), str(total_progress), "Finished"))
+            set_progress((str(current_progress), str(total_progress), "Finished", False))
     
     return graphJSON
 
