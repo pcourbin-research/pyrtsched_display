@@ -1,7 +1,7 @@
 from dash import Dash, dcc, html, Input, Output, State, callback, DiskcacheManager, CeleryManager
 import dash_bootstrap_components as dbc
 
-from pyrtsched_display import SchedulerDM, Scheduler
+from pyrtsched_display import SchedulerDM, SchedulerEDF, Scheduler
 from pyrtsched_display import ScheduleDisplay
 import json
 import pandas as pd
@@ -29,10 +29,11 @@ app.layout = html.Div([
         id='schedule_json_conf',
         value="""{
             "max_time": 40,
+            "scheduler": "DM",
             "premption_processor": "True",
             "premption_memory": "True",
             "tasks": [
-                {"Name": "T1", "O": 0, "R": 2, "E": 3, "W": 1, "D": 10, "T": 9},
+                {"Name": "T1", "O": 0, "R": 2, "E": 3, "W": 1, "D": 9, "T": 10},
                 {"Name": "T2", "O": 1, "R": 1, "E": 1, "W": 1, "D": 4, "T": 9},
                 {"Name": "T3", "O": 0, "C": 2, "D": 5, "T": 6}
             ],
@@ -60,7 +61,7 @@ app.layout = html.Div([
 def download_schedule_excel(n_clicks, value):
     df = pd.DataFrame()
     if n_clicks > 0:
-        print("Genrate Excel")
+        print("Generate Excel")
         print(value)
         if (value!=""):
             json_value = read_schedule_json(value)
@@ -78,8 +79,15 @@ def read_schedule_json(json_value) -> dict:
 
 def prepare_schedule(json_value: dict) -> Scheduler:
     max_time = json_value["max_time"]
+    scheduler_name = json_value["scheduler"]
 
-    scheduler = SchedulerDM()
+    if (scheduler_name == "DM"):
+        scheduler = SchedulerDM()
+    elif(scheduler_name == "EDF"):
+        scheduler = SchedulerEDF()
+    else:
+        scheduler = SchedulerDM()
+
     scheduler.configure_json(json_value)
     scheduler.schedule(max_time)
 
@@ -122,14 +130,14 @@ def display_graph(set_progress, n_clicks, value):
             set_progress((str(current_progress), str(total_progress), "Generate Schedule...", True))
 
             max_time = json_value["max_time"]
-            scheduler = prepare_schedule(json_value)
+            schedule = prepare_schedule(json_value)
 
             current_progress += 1
             set_progress((str(current_progress), str(total_progress), "Generate Graph...", True))
 
             # Prepare the schedule for display
             graph = ScheduleDisplay(max_time=max_time, render="browser")
-            graph.update_from_scheduler(scheduler)
+            graph.update_from_scheduler(schedule)
             graphJSON = graph.fig
 
             current_progress += 1

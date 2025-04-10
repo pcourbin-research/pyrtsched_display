@@ -7,6 +7,7 @@ from .task import Task
 from .taskset import TaskSet
 from .scheduler import Scheduler
 from .scheduler_dm import SchedulerDM
+from .scheduler_edf import SchedulerEDF
 from .schedule_display import ScheduleDisplay
 
 __author__ = """Pierre COURBIN"""
@@ -22,5 +23,6 @@ __all__ = [
     "TaskSet",
     "Scheduler",
     "SchedulerDM",
+    "SchedulerEDF",
     "ScheduleDisplay",
 ]
