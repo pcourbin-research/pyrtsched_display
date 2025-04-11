@@ -23,6 +23,7 @@ else:
 app = Dash(__name__, background_callback_manager=background_callback_manager, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME])
 app.scripts.config.serve_locally = True
 app.css.config.serve_locally = True
+app.title = "RTSched - Display"
 
 app.layout = html.Div([
     dcc.Textarea(
