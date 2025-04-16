@@ -43,7 +43,7 @@ class ScheduleDisplay:
         self._schedule["Finish"] = ScheduleDisplay.convert_date(self._schedule["Finish"])
 
         self._schedule["Resource_Type"] = self._resources.loc[self._schedule["Resource"]]["Type"].reset_index(drop=True)
-        self._schedule = self._schedule.sort_values(by=['Task', 'Resource'])
+        self._schedule = self._schedule.sort_values(by=['Task', 'Resource'], ascending=False)
 
         self._fig = None
 

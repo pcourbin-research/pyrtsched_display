@@ -5,23 +5,23 @@ class ResourceType(Enum):
     Memory = 2
 
 class Resource:
-    __name = ""
+    _name = ""
     _type = ResourceType.Processor
 
     def __init__(self, name, type):
-        self.__name = name
+        self._name = name
         self._type = type
 
     def __str__(self):
-        return "Resource: " + self.__name + " (" + str(self._type.name) + ")"
+        return "Resource: " + self._name + " (" + str(self._type.name) + ")"
 
     @property
     def name(self):
-        return self.__name
+        return self._name
     
     @name.setter
     def name(self, value: str):
-        self.__name = value
+        self._name = value
 
     @property
     def type(self):

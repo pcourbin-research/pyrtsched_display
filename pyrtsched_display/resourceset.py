@@ -5,14 +5,15 @@ from . import ResourceType, Resource
 class ResourceSet:
     _resources = []
 
-    def __init__(self, data):
+    def __init__(self, nb_processor: int):
         self._resources = []
-        if (isinstance(data, str)):
-            data = json.loads(data)
 
-        for resource_data in data:
-            resource = Resource(resource_data["Name"], ResourceType[resource_data["Type"]])
-            self._resources.append(resource)
+        for p in range(nb_processor):
+            resource = Resource(f"P{p}", ResourceType.Processor)
+            self._resources.append(resource)   
+
+        resource = Resource("M", ResourceType.Memory)
+        self._resources.append(resource) 
     
     def __str__(self):
         string = "Resources:\n"
@@ -23,6 +24,12 @@ class ResourceSet:
     @property
     def resources(self) -> list[Resource]:
         return self._resources
+    
+    def get_resource(self, name: str) -> Resource:
+        for resource in self._resources:
+            if resource.name == name:
+                return resource
+        return None
     
     def get_resourceset_as_dataframe(self):
         schema_resourceset={'Name': 'string', 'Type': 'string'}

@@ -31,16 +31,14 @@ app.layout = html.Div([
         value="""{
             "max_time": 40,
             "scheduler": "DM",
+            "memory_use_processor": "True",
             "premption_processor": "True",
             "premption_memory": "True",
+            "nb_processors" : 1,
             "tasks": [
-                {"Name": "T1", "O": 0, "R": 2, "E": 3, "W": 1, "D": 9, "T": 10},
+                {"Name": "T1", "O": 0, "R": 2, "E": 2, "W": 1, "D": 9, "T": 10},
                 {"Name": "T2", "O": 1, "R": 1, "E": 1, "W": 1, "D": 4, "T": 9},
-                {"Name": "T3", "O": 0, "C": 2, "D": 5, "T": 6}
-            ],
-            "resources": [
-                {"Name": "P1", "Type": "Processor"},
-                {"Name": "M1", "Type": "Memory"}
+                {"Name": "T3", "O": 0, "C": 2, "D": 20, "T": 20}
             ]
         }""",
         style={'width': '100%', 'height': 200, 'font-size': '90%',},
