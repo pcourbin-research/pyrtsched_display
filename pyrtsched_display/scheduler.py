@@ -1,3 +1,4 @@
+import math
 import pandas as pd
 from abc import ABC, abstractmethod
 from . import ResourceType, Resource, TaskSet, ResourceSet
@@ -28,7 +29,8 @@ class Scheduler(ABC):
 
         schema_schedule_result={'Task': 'string', 'Job': 'string', 'Start': 'int', 'Finish': 'int', 'Resource': 'string', 'Missed': 'string', 'Phase': 'int', 'RequestPhaseRemaining': 'int', 'TotalPhase': 'int', 'TotalRequestPhase': 'int'}
         self._schedule_result = pd.DataFrame(columns=schema_schedule_result.keys()).astype(schema_schedule_result)
-        self._previous_states = []
+        #self._previous_states = pd.DataFrame(columns=["Clock", "Remaining", "TaskScheduled", "RemainingMem"])
+        self._previous_states = []  # List to store previous states
         self._repeated_states = []
 
     
@@ -154,13 +156,79 @@ class Scheduler(ABC):
         self._current_time = 0
 
     def _capture_current_state(self):
-        """Capture the current state of the schedule."""
-        # Capture active jobs and their current execution state
-        current_state = self._schedule_current[["Task", "Phase", "Request"]].copy()
-        # Add the time since the last activation for each task
-        current_state["TimeSinceActivation"] = self._current_time - self._schedule_current["Activation"]
-        # Reset the index to ignore it during comparisons
-        current_state = current_state.reset_index(drop=True)
+        """Capture the current state of tasks and processors."""
+        # Define the schema for the DataFrame with explicit types
+        schema = {
+            "Type": "string",  # "Task" or "Processor"
+            "Name": "string",  # Name of the task or processor
+            "Clock": "float",  # Use float to allow -1 and NaN
+            "Remaining": "float",  # Use float to allow NaN
+            "TaskScheduled": "string",  # Use string for task names
+            "RemainingMem": "float",  # Use float to allow NaN
+        }
+        current_state = pd.DataFrame(columns=schema.keys()).astype(schema)
+
+        # Capture task states
+        for task in self._taskset.tasks:
+            first_activation = task.first_activation
+            period = task.period
+            last_activation = first_activation + ((self._current_time - first_activation) // period) * period
+            if (self._current_time >= first_activation):
+                clock = self._current_time - last_activation
+            else:
+                clock = -1
+            
+            job_rows = self._schedule_current[self._schedule_current["Task"] == task.name]
+            if job_rows.empty:
+                # Task has not been activated yet or all jobs are finished
+                remaining = 0
+            else:
+                # Task is active
+                current_phase = job_rows["Phase"].iloc[0]
+                total_execution_time = sum(phase.duration for phase in task.phases)
+                executed_time = sum(task.phases[phase_index].duration for phase_index in range(current_phase))
+                remaining = total_execution_time - executed_time - task.phases[current_phase].duration + job_rows["Request"].sum()
+
+            current_state = pd.concat([
+                current_state,
+                pd.DataFrame([{
+                    "Type": "Task",
+                    "Name": task.name,
+                    "Clock": clock,
+                    "Remaining": remaining,
+                    "TaskScheduled": "",
+                    "RemainingMem": ""
+                }])
+            ], ignore_index=True)
+
+        # Capture processor states
+        for processor in [res for res in self._resourceset.resources if res.type == ResourceType.Processor]:
+            task_scheduled = ""
+            remaining_mem = ""
+
+            # Check if a task is scheduled on this processor
+            scheduled_jobs = self._schedule_result[
+                (self._schedule_result["Resource"] == processor.name) &
+                (self._schedule_result["Finish"] == self._current_time)
+            ]
+            if not scheduled_jobs.empty:
+                task_scheduled = scheduled_jobs["Task"].iloc[0]
+                job_scheduled = scheduled_jobs["Job"].iloc[0]
+                if processor.type == ResourceType.Memory:
+                    remaining_mem = self._schedule_current.loc[job_scheduled, "Request"]
+            #if (task_scheduled is not None) or (remaining_mem is not None):
+            new_current_state = pd.DataFrame([{
+                "Type": "Processor",
+                "Name": processor.name,
+                "Clock": math.nan,
+                "Remaining": math.nan,
+                "TaskScheduled": task_scheduled,
+                "RemainingMem": remaining_mem
+            }])
+            current_state = pd.concat([
+                current_state, new_current_state
+            ], ignore_index=True)
+
         return current_state
 
     def _is_repeated_state(self, state: pd.DataFrame = None) -> bool:
@@ -168,12 +236,11 @@ class Scheduler(ABC):
         for previous_state, previous_time in self._previous_states:
             # Compare states without considering the index
             if state.equals(previous_state) or (state.empty and previous_state.empty):
-                # Store the repeated state and its timestamps
                 self._repeated_states.append({
-                    "CurrentTime": self._current_time,
                     "PreviousTime": previous_time,
-                    "CurrentState": state.copy(),
-                    "PreviousState": previous_state.copy()
+                    "CurrentTime": self._current_time,
+                    "PreviousState": previous_state.copy(),
+                    "CurrentState": state.copy()
                 })
                 return True
         return False
@@ -213,13 +280,6 @@ class Scheduler(ABC):
         for job in jobs_to_remove:
             self._schedule_current.drop([job], inplace=True)
 
-        # Check for repeated state before scheduling
-        current_state = self._capture_current_state()
-        self._is_repeated_state(current_state)
-
-        # Save the current state and time to the history
-        self._previous_states.append((current_state, self._current_time))
-
         self._schedule_current["Executed"] = False
 
         # Update schedule current with new task activations
@@ -238,6 +298,13 @@ class Scheduler(ABC):
                         AbsoluteDeadline=absolute_deadline  # Store the absolute deadline
                     )], index=[task.name + "_" + str(self._current_time)])
                 ])
+
+        # Check for repeated state before scheduling
+        current_state = self._capture_current_state()
+        self._is_repeated_state(current_state)
+
+        # Save the current state and time to the history
+        self._previous_states.append((current_state, self._current_time))
 
         available_resources = self._resourceset.resources.copy()
 
