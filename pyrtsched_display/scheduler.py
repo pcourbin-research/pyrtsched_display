@@ -396,7 +396,8 @@ class Scheduler(ABC):
 
             # Check for repeated state
             if stop_on_repeated_state and len(self.repeated_states) > 0:
-                print(f"Stopping scheduling at time {self._current_time} due to repeated state.")
+                first_repeated_state = self.repeated_states[0]
+                print(f"Stopping scheduling at time {self._current_time} due to repeated state. First repeated state occurred between time {first_repeated_state['PreviousTime']} and {first_repeated_state['CurrentTime']}.")
                 break
 
             # Check for missed deadlines
@@ -405,7 +406,8 @@ class Scheduler(ABC):
                 (self._current_time >= self._schedule_current["AbsoluteDeadline"])
             ]
             if stop_on_missed_deadline and not missed_deadlines.empty:
-                print(f"Stopping scheduling at time {self._current_time} due to missed deadline.")
+                missed_tasks = missed_deadlines["Task"].unique()
+                print(f"Stopping scheduling at time {self._current_time} due to missed deadline by tasks: {', '.join(missed_tasks)}.")
                 break
 
             # Perform scheduling for the current time step
