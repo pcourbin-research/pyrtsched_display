@@ -12,6 +12,8 @@ class Scheduler(ABC):
     }
     _schedule_current = None
     _current_time = 0
+    _previous_states = []  # List to store previous states
+    _repeated_states = []  # List to store repeated states
 
     def __init__(self):
         self._taskset = None
@@ -20,12 +22,14 @@ class Scheduler(ABC):
         self._premption[ResourceType.Memory] = True
         self._memory_use_processor = False
 
-        schema_schedule_current={'Job': 'string', 'Task': 'string', 'Activation': 'int', 'Phase': 'int', 'Request': 'int', 'Executed': 'bool', 'NonPreemptiveResource': 'string'}
+        schema_schedule_current={'Job': 'string', 'Task': 'string', 'Activation': 'int', 'Phase': 'int', 'Request': 'int', 'Executed': 'bool', 'NonPreemptiveResource': 'string', 'AbsoluteDeadline': 'int'}
         self._schedule_current = pd.DataFrame(columns=schema_schedule_current.keys()).astype(schema_schedule_current)
         self._schedule_current.set_index('Job', inplace=True)
 
         schema_schedule_result={'Task': 'string', 'Job': 'string', 'Start': 'int', 'Finish': 'int', 'Resource': 'string', 'Missed': 'string', 'Phase': 'int', 'RequestPhaseRemaining': 'int', 'TotalPhase': 'int', 'TotalRequestPhase': 'int'}
         self._schedule_result = pd.DataFrame(columns=schema_schedule_result.keys()).astype(schema_schedule_result)
+        self._previous_states = []
+        self._repeated_states = []
 
     
     def __str__(self):
@@ -77,6 +81,10 @@ class Scheduler(ABC):
         self._resourceset = value
         self._restart_schedule()
 
+    @property
+    def repeated_states(self):
+        return self._repeated_states
+    
     def configure(self, taskset, resourceset, premption_processor=True, premption_memory=True, memory_use_processor=False):
         self._taskset = taskset
         self._resourceset = resourceset
@@ -127,8 +135,7 @@ class Scheduler(ABC):
 
             # Save schedule result
             self._schedule_result = pd.concat([self._schedule_result, pd.DataFrame([dict(Task=task_name, Job=job, Start=self._current_time, Finish=self._current_time+1, Resource=resource.name, Missed="", Phase=job_current_phase+1, RequestPhaseRemaining=self._schedule_current.loc[job, "Request"], TotalPhase=len(task.phases), TotalRequestPhase=task.phases[job_current_phase].duration, NonPreemptiveResource=self._schedule_current.loc[job, "NonPreemptiveResource"])])])
-            
-
+        
         self._schedule_current.loc[job, "Request"] -= 1
         self._schedule_current.loc[job, "Executed"] = True
 
@@ -138,27 +145,108 @@ class Scheduler(ABC):
                 self._schedule_current.loc[job, "Phase"] = (job_current_phase + 1)
                 self._schedule_current.loc[job, "Request"] = task.phases[(job_current_phase + 1)].duration
                 self._schedule_current.loc[job, "NonPreemptiveResource"] = ""
-            else:
-                self._schedule_current.drop([job], inplace=True)
+            #else:
+            #    self._schedule_current.drop([job], inplace=True)
     
     def _restart_schedule(self):
         self._schedule_result = self._schedule_result.iloc[0:0]
         self._schedule_current = self._schedule_current.iloc[0:0]
         self._current_time = 0
 
+    def _capture_current_state(self):
+        """Capture the current state of the schedule."""
+        # Capture active jobs and their current execution state
+        current_state = self._schedule_current[["Task", "Phase", "Request"]].copy()
+        # Add the time since the last activation for each task
+        current_state["TimeSinceActivation"] = self._current_time - self._schedule_current["Activation"]
+        # Reset the index to ignore it during comparisons
+        current_state = current_state.reset_index(drop=True)
+        return current_state
+
+    def _is_repeated_state(self, state: pd.DataFrame = None) -> bool:
+        """Check if the current state matches any previous state."""
+        for previous_state, previous_time in self._previous_states:
+            # Compare states without considering the index
+            if state.equals(previous_state) or (state.empty and previous_state.empty):
+                # Store the repeated state and its timestamps
+                self._repeated_states.append({
+                    "CurrentTime": self._current_time,
+                    "PreviousTime": previous_time,
+                    "CurrentState": state.copy(),
+                    "PreviousState": previous_state.copy()
+                })
+                return True
+        return False
+    
+    def export_repeated_states_to_excel(self, filename="repeated_states.xlsx"):
+        """Export repeated states to an Excel file."""
+        if not self._repeated_states:
+            print("No repeated states to export.")
+            return
+
+        with pd.ExcelWriter(filename) as writer:
+            for repeated_state in self._repeated_states:
+                sheet_name = f"{repeated_state['PreviousTime']}_{repeated_state['CurrentTime']}"
+                # Combine CurrentState and PreviousState side by side
+                combined_state = pd.concat(
+                    [repeated_state["PreviousState"].add_prefix(f"{repeated_state['PreviousTime']}"+"_"), 
+                    repeated_state["CurrentState"].add_prefix(f"{repeated_state['CurrentTime']}"+"_")], 
+                    axis=1
+                )
+                combined_state.to_excel(writer, sheet_name=sheet_name, index=False)
+
     def _schedule_next(self):
+        # Clear the schedule of finished jobs after their deadline
+        #jobs_to_remove = self._schedule_current[(self._schedule_current["Request"] == 0) & (self._current_time >= self._schedule_current["AbsoluteDeadline"])].index.tolist()
+        #for job in jobs_to_remove:
+        #    self._schedule_current.drop([job], inplace=True)
+
+        # List jobs where Request is 0 and current_time equals the last activation plus the task period
+        jobs_to_remove = []
+        for job in self._schedule_current.index:
+            task = self._taskset.get_task(self._schedule_current.loc[job]["Task"])
+            last_activation = self._schedule_current.loc[job]["Activation"]
+            if self._schedule_current.loc[job]["Request"] == 0 and self._current_time == last_activation + task.period:
+                jobs_to_remove.append(job)
+
+        # Process the listed jobs (if needed, you can add specific logic here)
+        for job in jobs_to_remove:
+            self._schedule_current.drop([job], inplace=True)
+
+        # Check for repeated state before scheduling
+        current_state = self._capture_current_state()
+        self._is_repeated_state(current_state)
+
+        # Save the current state and time to the history
+        self._previous_states.append((current_state, self._current_time))
+
         self._schedule_current["Executed"] = False
 
-        # Update schedule current with new task activations.
+        # Update schedule current with new task activations
         for task in self._taskset.tasks:
             if (self._current_time - task.first_activation) % task.period == 0:
-                self._schedule_current = pd.concat([self._schedule_current, pd.DataFrame([dict(Task=task.name, Activation=self._current_time, Phase=0, Request=task.phases[0].duration, Executed=False, NonPreemptiveResource="")],index=[task.name+"_"+str(self._current_time)])])
-
+                absolute_deadline = self._current_time + task.deadline
+                self._schedule_current = pd.concat([
+                    self._schedule_current,
+                    pd.DataFrame([dict(
+                        Task=task.name,
+                        Activation=self._current_time,
+                        Phase=0,
+                        Request=task.phases[0].duration,
+                        Executed=False,
+                        NonPreemptiveResource="",
+                        AbsoluteDeadline=absolute_deadline  # Store the absolute deadline
+                    )], index=[task.name + "_" + str(self._current_time)])
+                ])
 
         available_resources = self._resourceset.resources.copy()
 
-        # Schedule non-preemptive jobs/ressources
-        jobs_selected_non_premptive = self._schedule_current[(self._schedule_current["NonPreemptiveResource"] != "") & (self._schedule_current["Request"] > 0) & (self._schedule_current["Executed"] == False)].index.tolist()
+        # Schedule non-preemptive jobs/resources
+        jobs_selected_non_premptive = self._schedule_current[
+            (self._schedule_current["NonPreemptiveResource"] != "") &
+            (self._schedule_current["Request"] > 0) &
+            (self._schedule_current["Executed"] == False)
+        ].index.tolist()
 
         for job_selected in jobs_selected_non_premptive:
             resources_names = self._schedule_current.loc[job_selected]["NonPreemptiveResource"].split(",")
@@ -170,7 +258,7 @@ class Scheduler(ABC):
             self._schedule_job_on_resources(resources, job_selected)
             for resource in resources:
                 available_resources.remove(resource)
-        
+
         # Try to schedule next jobs on resources
         jobs_sorted = self._sort_jobs_by_priority()
         for job in jobs_sorted:
@@ -180,16 +268,15 @@ class Scheduler(ABC):
             task_name = self._schedule_current.loc[job]["Task"]
             job_current_phase = self._schedule_current.loc[job]["Phase"]
             task = self._taskset.get_task(task_name)
-            task_resource_types = []
-            task_resource_types.append(task.phases[job_current_phase].ressource_type)
-            if (self._memory_use_processor == True and task.phases[job_current_phase].ressource_type == ResourceType.Memory):
+            task_resource_types = [task.phases[job_current_phase].ressource_type]
+            if self._memory_use_processor and task.phases[job_current_phase].ressource_type == ResourceType.Memory:
                 task_resource_types.append(ResourceType.Processor)
 
             # Check if resource is available
             selected_resource = []
             task_resource_types_temp = task_resource_types.copy()
             for resource in available_resources:
-                if (resource.type in task_resource_types_temp):
+                if resource.type in task_resource_types_temp:
                     selected_resource.append(resource)
                     task_resource_types_temp.remove(resource.type)
                     if (task_resource_types_temp == []):
@@ -202,22 +289,57 @@ class Scheduler(ABC):
                 for ressource in selected_resource:
                     available_resources.remove(ressource)
 
-                
         # Check for missed deadlines
         for job in self._schedule_current.index.tolist():
-            task = self._taskset.get_task(self._schedule_current.loc[job]["Task"])
-            job_deadline = self._schedule_current.loc[job]["Activation"] + task.deadline
-            job_current_phase = self._schedule_current.loc[job]["Phase"]
-                
-            if (self._current_time+1 >= job_deadline and self._schedule_current.loc[job, "Request"] > 0):
-                self._schedule_result = pd.concat([self._schedule_result, pd.DataFrame([dict(Task=task.name,Job=job, Start=self._current_time+1, Finish=self._current_time+1, Resource="", Missed="Missed", Phase=job_current_phase+1, RequestPhaseRemaining=self._schedule_current.loc[job, "Request"], TotalPhase=len(task.phases), TotalRequestPhase=task.phases[job_current_phase].duration, NonPreemptiveResource=self._schedule_current.loc[job, "NonPreemptiveResource"])])])
+            if self._current_time + 1 >= self._schedule_current.loc[job, "AbsoluteDeadline"] and self._schedule_current.loc[job, "Request"] > 0:
+                task = self._taskset.get_task(self._schedule_current.loc[job]["Task"])
+                job_current_phase = self._schedule_current.loc[job]["Phase"]
+                self._schedule_result = pd.concat([
+                    self._schedule_result,
+                    pd.DataFrame([dict(
+                        Task=task.name,
+                        Job=job,
+                        Start=self._current_time + 1,
+                        Finish=self._current_time + 1,
+                        Resource="",
+                        Missed="Missed",
+                        Phase=job_current_phase + 1,
+                        RequestPhaseRemaining=self._schedule_current.loc[job, "Request"],
+                        TotalPhase=len(task.phases),
+                        TotalRequestPhase=task.phases[job_current_phase].duration,
+                        NonPreemptiveResource=self._schedule_current.loc[job, "NonPreemptiveResource"]
+                    )])
+                ])
 
-        
         self._current_time += 1
     
-    def schedule(self, max_time: int=40):
+    def schedule(self, max_time: int = 40, stop_on_repeated_state: bool = False, stop_on_missed_deadline: bool = False):
+        """
+        Run the scheduling process up to max_time with optional stop conditions.
+        
+        Parameters:
+        - max_time (int): Maximum time to run the scheduler.
+        - stop_on_repeated_state (bool): Stop scheduling if a repeated state is detected.
+        - stop_on_missed_deadline (bool): Stop scheduling if a missed deadline is detected.
+        """
         self._restart_schedule()
 
         for t in range(max_time):
             self._current_time = t
+
+            # Check for repeated state
+            if stop_on_repeated_state and len(self.repeated_states) > 0:
+                print(f"Stopping scheduling at time {self._current_time} due to repeated state.")
+                break
+
+            # Check for missed deadlines
+            missed_deadlines = self._schedule_current[
+                (self._schedule_current["Request"] > 0) &
+                (self._current_time >= self._schedule_current["AbsoluteDeadline"])
+            ]
+            if stop_on_missed_deadline and not missed_deadlines.empty:
+                print(f"Stopping scheduling at time {self._current_time} due to missed deadline.")
+                break
+
+            # Perform scheduling for the current time step
             self._schedule_next()
