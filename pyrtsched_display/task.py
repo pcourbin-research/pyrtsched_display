@@ -99,3 +99,20 @@ class Task:
     @property
     def phases(self) -> list[TaskPhase]:
         return self._phases
+
+    def to_dict(self):
+        """Convert the task to a dictionary format."""
+        return {
+            "Name": self._name,
+            "O": self._first_activation,
+            "D": self._deadline,
+            "T": self._period,
+            "Phases": [
+                {
+                    "Type": phase.ressource_type.name,
+                    "Duration": phase.duration,
+                    "Premption": phase.premption
+                }
+                for phase in self._phases
+            ]
+        }

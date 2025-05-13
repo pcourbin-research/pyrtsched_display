@@ -1,7 +1,16 @@
 import math
 import pandas as pd
+import logging  # Import logging
 from abc import ABC, abstractmethod
 from . import ResourceType, Resource, TaskSet, ResourceSet
+import json
+
+# Configurer le logger
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,  # Niveau de log par défaut
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+)
 
 class Scheduler(ABC):
     _taskset = None
@@ -109,6 +118,8 @@ class Scheduler(ABC):
         self._memory_use_processor = data_json["memory_use_processor"]
         self._restart_schedule()
 
+    
+
     @abstractmethod
     def _job_priority(self, job_name: str) -> int: # Job priority. Lower value = higher priority.
         pass
@@ -214,7 +225,10 @@ class Scheduler(ABC):
             if not scheduled_jobs.empty:
                 task_scheduled = scheduled_jobs["Task"].iloc[0]
                 job_scheduled = scheduled_jobs["Job"].iloc[0]
-                if processor.type == ResourceType.Memory:
+                task_name = self._schedule_current.loc[job_scheduled]["Task"]
+                job_current_phase = self._schedule_current.loc[job_scheduled]["Phase"]
+                task = self._taskset.get_task(task_name)
+                if task.phases[job_current_phase].ressource_type == ResourceType.Memory:
                     remaining_mem = self._schedule_current.loc[job_scheduled, "Request"]
             #if (task_scheduled is not None) or (remaining_mem is not None):
             new_current_state = pd.DataFrame([{
@@ -233,9 +247,22 @@ class Scheduler(ABC):
 
     def _is_repeated_state(self, state: pd.DataFrame = None) -> bool:
         """Check if the current state matches any previous state."""
+        # Ensure the state is valid for comparison
+        if state is None or state.empty:
+            return False
+
+        # Check if any "Clock" value is -1 in the current state
+        if (state["Clock"] == -1).any():
+            return False
+
+        # Compare the current state with previous states
         for previous_state, previous_time in self._previous_states:
+            # Ensure the previous state is valid for comparison
+            if (previous_state["Clock"] == -1).any():
+                continue
+
             # Compare states without considering the index
-            if state.equals(previous_state) or (state.empty and previous_state.empty):
+            if state.equals(previous_state): # or (state.empty and previous_state.empty):
                 self._repeated_states.append({
                     "PreviousTime": previous_time,
                     "CurrentTime": self._current_time,
@@ -243,12 +270,13 @@ class Scheduler(ABC):
                     "CurrentState": state.copy()
                 })
                 return True
+
         return False
     
     def export_repeated_states_to_excel(self, filename="repeated_states.xlsx"):
         """Export repeated states to an Excel file."""
         if not self._repeated_states:
-            print("No repeated states to export.")
+            logger.info("No repeated states to export.")
             return
 
         with pd.ExcelWriter(filename) as writer:
@@ -261,25 +289,56 @@ class Scheduler(ABC):
                     axis=1
                 )
                 combined_state.to_excel(writer, sheet_name=sheet_name, index=False)
+        logger.info(f"Repeated states exported to {filename}")
+
+    def export_configuration_to_json(self, filename="configuration.json"):
+        """
+        Export the current configuration to a JSON file.
+        
+        Parameters:
+        - filename (str): The name of the file to save the configuration.
+        """
+        configuration = {
+            "tasks": [task.to_dict() for task in self._taskset.tasks],
+            "nb_processors": len(self._resourceset.resources),
+            "premption_processor": self._premption[ResourceType.Processor],
+            "premption_memory": self._premption[ResourceType.Memory],
+            "memory_use_processor": self._memory_use_processor,
+        }
+
+        with open(filename, "w") as json_file:
+            json.dump(configuration, json_file, indent=4)
+        logger.info(f"Configuration exported to {filename}")
+
+    def load_from_files(self, json_filename: str, excel_filename: str):
+        """
+        Reload the scheduler from a JSON configuration file and an Excel schedule file.
+        
+        Parameters:
+        - json_filename (str): The name of the JSON file containing the configuration.
+        - excel_filename (str): The name of the Excel file containing the schedule results.
+        """
+        # Load configuration from JSON
+        with open(json_filename, "r") as json_file:
+            configuration = json.load(json_file)
+        
+        # Reconfigure the scheduler
+        self.configure_json(configuration)
+        logger.info(f"Configuration loaded from {json_filename}")
+
+        # Load schedule results from Excel
+        self._schedule_result = pd.read_excel(excel_filename)
+        logger.info(f"Schedule results loaded from {excel_filename}")
+
+        # Reset the current time to the maximum time in the schedule results
+        if not self._schedule_result.empty:
+            self._current_time = self._schedule_result["Finish"].max()
+        else:
+            self._current_time = 0
+
+        logger.info(f"Scheduler reloaded. Current time set to {self._current_time}.")
 
     def _schedule_next(self):
-        # Clear the schedule of finished jobs after their deadline
-        #jobs_to_remove = self._schedule_current[(self._schedule_current["Request"] == 0) & (self._current_time >= self._schedule_current["AbsoluteDeadline"])].index.tolist()
-        #for job in jobs_to_remove:
-        #    self._schedule_current.drop([job], inplace=True)
-
-        # List jobs where Request is 0 and current_time equals the last activation plus the task period
-        jobs_to_remove = []
-        for job in self._schedule_current.index:
-            task = self._taskset.get_task(self._schedule_current.loc[job]["Task"])
-            last_activation = self._schedule_current.loc[job]["Activation"]
-            if self._schedule_current.loc[job]["Request"] == 0 and self._current_time == last_activation + task.period:
-                jobs_to_remove.append(job)
-
-        # Process the listed jobs (if needed, you can add specific logic here)
-        for job in jobs_to_remove:
-            self._schedule_current.drop([job], inplace=True)
-
         self._schedule_current["Executed"] = False
 
         # Update schedule current with new task activations
@@ -302,6 +361,18 @@ class Scheduler(ABC):
         # Check for repeated state before scheduling
         current_state = self._capture_current_state()
         self._is_repeated_state(current_state)
+
+        # List jobs where Request is 0 and current_time equals the last activation plus the task period
+        jobs_to_remove = []
+        for job in self._schedule_current.index:
+            task = self._taskset.get_task(self._schedule_current.loc[job]["Task"])
+            last_activation = self._schedule_current.loc[job]["Activation"]
+            if self._schedule_current.loc[job]["Request"] == 0 and self._current_time >= last_activation + task.period:
+                jobs_to_remove.append(job)
+
+        # Process the listed jobs (if needed, you can add specific logic here)
+        for job in jobs_to_remove:
+            self._schedule_current.drop([job], inplace=True)
 
         # Save the current state and time to the history
         self._previous_states.append((current_state, self._current_time))
@@ -397,17 +468,22 @@ class Scheduler(ABC):
             # Check for repeated state
             if stop_on_repeated_state and len(self.repeated_states) > 0:
                 first_repeated_state = self.repeated_states[0]
-                print(f"Stopping scheduling at time {self._current_time} due to repeated state. First repeated state occurred between time {first_repeated_state['PreviousTime']} and {first_repeated_state['CurrentTime']}.")
+                logger.warning(
+                    f"Stopping scheduling at time {self._current_time} due to repeated state. "
+                    f"First repeated state occurred between time {first_repeated_state['PreviousTime']} and {first_repeated_state['CurrentTime']}."
+                )
                 break
 
             # Check for missed deadlines
             missed_deadlines = self._schedule_current[
-                (self._schedule_current["Request"] > 0) &
+                (self._schedule_current["Request"] > 0) & 
                 (self._current_time >= self._schedule_current["AbsoluteDeadline"])
             ]
             if stop_on_missed_deadline and not missed_deadlines.empty:
                 missed_tasks = missed_deadlines["Task"].unique()
-                print(f"Stopping scheduling at time {self._current_time} due to missed deadline by tasks: {', '.join(missed_tasks)}.")
+                logger.warning(
+                    f"Stopping scheduling at time {self._current_time} due to missed deadline by tasks: {', '.join(missed_tasks)}."
+                )
                 break
 
             # Perform scheduling for the current time step

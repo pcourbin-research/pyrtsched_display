@@ -99,7 +99,7 @@ class ScheduleDisplay:
         
     def fig_add_missed(self, fig):
         # Plot missed deadline
-        for index, sched in self._schedule[self._schedule["Missed"]!=""].iterrows():
+        for index, sched in self._schedule[(self._schedule["Missed"]!="") & (self._schedule["Missed"].isna() == False)].iterrows():
             index_task = self._category_list.index(sched["Task"])
             fig.add_shape(type="rect",
                 x0=sched["Start"], x1=sched["Finish"], y0=index_task-self._rect_width/2-0.1, y1=index_task+self._rect_width/2+0.1,

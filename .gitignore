@@ -163,3 +163,5 @@ cython_debug/
 cache/
 test.py
 *.xlsx
+*.json
+results/
