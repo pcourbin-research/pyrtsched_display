@@ -140,6 +140,7 @@ class Scheduler(ABC):
         if isinstance(job_current_phase, pd.Series):
             job_current_phase = job_current_phase.iloc[0]
         task = self._taskset.get_task(str(task_name))
+        assert task is not None, f"Task {task_name} not found in TaskSet."
         task_resource_type = task.phases[int(job_current_phase)].ressource_type 
 
         self._schedule_current.loc[job, "NonPreemptiveResource"] = ""
@@ -238,6 +239,7 @@ class Scheduler(ABC):
                 task_name = self._schedule_current.loc[job_scheduled]["Task"]
                 job_current_phase = self._schedule_current.loc[job_scheduled]["Phase"]
                 task = self._taskset.get_task(str(task_name))
+                assert task is not None, f"Task {task_name} not found in TaskSet."
                 if task.phases[job_current_phase].ressource_type == ResourceType.Memory:
                     remaining_mem = self._schedule_current.loc[job_scheduled, "Request"]
             #if (task_scheduled is not None) or (remaining_mem is not None):
@@ -381,6 +383,7 @@ class Scheduler(ABC):
         jobs_to_remove = []
         for job in self._schedule_current.index:
             task = self._taskset.get_task(self._schedule_current.loc[job]["Task"])
+            assert task is not None, f"Task {self._schedule_current.loc[job]['Task']} not found in TaskSet."
             last_activation = self._schedule_current.loc[job]["Activation"]
             if self._schedule_current.loc[job]["Request"] == 0 and self._current_time >= last_activation + task.period:
                 jobs_to_remove.append(job)
@@ -423,6 +426,7 @@ class Scheduler(ABC):
             if isinstance(job_current_phase, pd.Series):
                 job_current_phase = job_current_phase.iloc[0]
             task = self._taskset.get_task(str(task_name))
+            assert task is not None, f"Task {task_name} not found in TaskSet."
             task_resource_types = [task.phases[job_current_phase].ressource_type]
             if self._memory_use_processor and task.phases[job_current_phase].ressource_type == ResourceType.Memory:
                 task_resource_types.append(ResourceType.Processor)
@@ -448,6 +452,7 @@ class Scheduler(ABC):
         for job in self._schedule_current.index.tolist():
             if self._current_time + 1 >= self._schedule_current.loc[job, "AbsoluteDeadline"] and self._schedule_current.loc[job, "Request"] > 0: # type: ignore
                 task = self._taskset.get_task(self._schedule_current.loc[job]["Task"])
+                assert task is not None, f"Task {self._schedule_current.loc[job]['Task']} not found in TaskSet."
                 job_current_phase = self._schedule_current.loc[job]["Phase"]
                 self._schedule_result = pd.concat([
                     self._schedule_result,

@@ -69,7 +69,7 @@ def download_schedule_excel(n_clicks, value):
             scheduler = prepare_schedule(json_value)
             df = scheduler.schedule_result
 
-    return dcc.send_data_frame(df.to_excel, "schedule.xlsx", sheet_name="Scheduling", index=False)
+    return dcc.send_data_frame(df.to_excel, "schedule.xlsx", sheet_name="Scheduling", index=False) # type: ignore
 
 def read_schedule_json(json_value) -> dict:
     if (isinstance(json_value, str)):
@@ -145,4 +145,4 @@ def display_graph(set_progress, n_clicks, value):
     return graphJSON
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8050, host='0.0.0.0')
+    app.run(debug=True, port="8050", host='0.0.0.0')
