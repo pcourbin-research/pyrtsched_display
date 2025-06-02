@@ -134,9 +134,9 @@ if __name__ == "__main__":
     output_directory = "results"
     number_of_task_sets = 1000  # Number of task sets to generate and test
     number_of_tasks = 5  # Number of tasks per task set
-    max_task_period = 20  # Maximum period for tasks
-    max_total_utilization = 0.4  # Maximum total utilization for all tasks
-    max_task_utilization = 0.2  # Maximum utilization for a single task
+    max_task_period = 40  # Maximum period for tasks
+    max_total_utilization = 0.8  # Maximum total utilization for all tasks
+    max_task_utilization = 0.4  # Maximum utilization for a single task
     
     logging.getLogger().setLevel(logging.INFO)
     test_schedules(output_directory, number_of_task_sets, number_of_tasks, max_task_period, max_total_utilization, max_task_utilization)

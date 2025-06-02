@@ -93,7 +93,10 @@ scheduler.schedule(
 )
 
 # Save the schedule to an Excel file
-scheduler.schedule_result.to_excel("schedule.xlsx", index=False)
+if scheduler.schedule_result is not None:
+    scheduler.schedule_result.to_excel("schedule.xlsx", index=False)
+else:
+    print("Warning: No schedule result to export to Excel.")
 scheduler.export_configuration_to_json("configuration.json")
 
 repeated_states = scheduler.repeated_states
@@ -140,10 +143,12 @@ if scheduler._previous_states:
         data.append([f"{task_name}_Rem"] + [None] * max_time)
 
     # Add processor information
-    
-    for processor in scheduler.resourceset.get_resourceset_as_dataframe()["Name"].unique():
-        data.append([f"{processor}_Sch"] + [None] * max_time)
-        data.append([f"{processor}_RemMem"] + [None] * max_time)
+    if scheduler.resourceset is not None:
+        for processor in scheduler.resourceset.get_resourceset_as_dataframe()["Name"].unique():
+            data.append([f"{processor}_Sch"] + [None] * max_time)
+            data.append([f"{processor}_RemMem"] + [None] * max_time)
+    else:
+        print("Warning: scheduler.resourceset is None, skipping processor information.")
 
     df = pd.DataFrame(data, columns=columns)
 
