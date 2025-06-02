@@ -2,6 +2,7 @@ import math
 import pandas as pd
 import logging  # Import logging
 from abc import ABC, abstractmethod
+from typing import Optional
 from . import ResourceType, Resource, TaskSet, ResourceSet
 import json
 
@@ -33,11 +34,11 @@ class Scheduler(ABC):
         self._memory_use_processor = False
 
         schema_schedule_current={'Job': 'string', 'Task': 'string', 'Activation': 'int', 'Phase': 'int', 'Request': 'int', 'Executed': 'bool', 'NonPreemptiveResource': 'string', 'AbsoluteDeadline': 'int'}
-        self._schedule_current = pd.DataFrame(columns=schema_schedule_current.keys()).astype(schema_schedule_current)
+        self._schedule_current = pd.DataFrame(columns=list(schema_schedule_current.keys())).astype(schema_schedule_current)
         self._schedule_current.set_index('Job', inplace=True)
 
         schema_schedule_result={'Task': 'string', 'Job': 'string', 'Start': 'int', 'Finish': 'int', 'Resource': 'string', 'Missed': 'string', 'Phase': 'int', 'RequestPhaseRemaining': 'int', 'TotalPhase': 'int', 'TotalRequestPhase': 'int'}
-        self._schedule_result = pd.DataFrame(columns=schema_schedule_result.keys()).astype(schema_schedule_result)
+        self._schedule_result = pd.DataFrame(columns=list(schema_schedule_result.keys())).astype(schema_schedule_result)
         #self._previous_states = pd.DataFrame(columns=["Clock", "Remaining", "TaskScheduled", "RemainingMem"])
         self._previous_states = []  # List to store previous states
         self._repeated_states = []
@@ -125,16 +126,21 @@ class Scheduler(ABC):
         pass
 
     def _sort_jobs_by_priority(self) -> list[str]: # Sort jobs by priority
+        assert self._schedule_current is not None, "Schedule current is not set. Cannot sort jobs by priority."
         jobs_to_execute = self._schedule_current[(self._schedule_current["Request"] > 0) & (self._schedule_current["Executed"] == False)].index.tolist()
         # Call abstract method _job_priority, according to the scheduler algorithm
         jobs_sorted = sorted(jobs_to_execute, key=lambda job_name: self._job_priority(job_name))
         return jobs_sorted  
     
     def _schedule_job_on_resources(self, resources: list[Resource], job: str):
+        assert self._schedule_current is not None, "Schedule current is not set. Cannot schedule job on resources."
+        assert self._taskset is not None, "TaskSet is not set. Cannot schedule job on resources."
         task_name = self._schedule_current.loc[job]["Task"]
         job_current_phase = self._schedule_current.loc[job]["Phase"]
-        task = self._taskset.get_task(task_name)
-        task_resource_type = task.phases[job_current_phase].ressource_type
+        if isinstance(job_current_phase, pd.Series):
+            job_current_phase = job_current_phase.iloc[0]
+        task = self._taskset.get_task(str(task_name))
+        task_resource_type = task.phases[int(job_current_phase)].ressource_type 
 
         self._schedule_current.loc[job, "NonPreemptiveResource"] = ""
         for resource in resources:
@@ -144,12 +150,12 @@ class Scheduler(ABC):
                 if (self._schedule_current.loc[job, "NonPreemptiveResource"] == ""):
                     self._schedule_current.loc[job, "NonPreemptiveResource"] = resource.name
                 else:
-                    self._schedule_current.loc[job, "NonPreemptiveResource"] += ", " + resource.name
+                    self._schedule_current.loc[job, "NonPreemptiveResource"] = str(self._schedule_current.loc[job, "NonPreemptiveResource"]) + ", " + str(resource.name)
 
             # Save schedule result
             self._schedule_result = pd.concat([self._schedule_result, pd.DataFrame([dict(Task=task_name, Job=job, Start=self._current_time, Finish=self._current_time+1, Resource=resource.name, Missed="", Phase=job_current_phase+1, RequestPhaseRemaining=self._schedule_current.loc[job, "Request"], TotalPhase=len(task.phases), TotalRequestPhase=task.phases[job_current_phase].duration, NonPreemptiveResource=self._schedule_current.loc[job, "NonPreemptiveResource"])])])
         
-        self._schedule_current.loc[job, "Request"] -= 1
+        self._schedule_current.loc[job, "Request"] -= 1 # type: ignore
         self._schedule_current.loc[job, "Executed"] = True
 
         # Update schedule current with next task phase if task phase is completed
@@ -162,8 +168,8 @@ class Scheduler(ABC):
             #    self._schedule_current.drop([job], inplace=True)
     
     def _restart_schedule(self):
-        self._schedule_result = self._schedule_result.iloc[0:0]
-        self._schedule_current = self._schedule_current.iloc[0:0]
+        self._schedule_result = self._schedule_result.iloc[0:0] # type: ignore
+        self._schedule_current = self._schedule_current.iloc[0:0] # type: ignore
         self._current_time = 0
 
     def _capture_current_state(self):
@@ -177,9 +183,10 @@ class Scheduler(ABC):
             "TaskScheduled": "string",  # Use string for task names
             "RemainingMem": "float",  # Use float to allow NaN
         }
-        current_state = pd.DataFrame(columns=schema.keys()).astype(schema)
+        current_state = pd.DataFrame(columns=list(schema.keys())).astype(schema)
 
         # Capture task states
+        assert self._taskset is not None, "TaskSet is not set. Cannot capture task states."
         for task in self._taskset.tasks:
             first_activation = task.first_activation
             period = task.period
@@ -189,7 +196,7 @@ class Scheduler(ABC):
             else:
                 clock = -1
             
-            job_rows = self._schedule_current[self._schedule_current["Task"] == task.name]
+            job_rows = self._schedule_current[self._schedule_current["Task"] == task.name] # type: ignore
             if job_rows.empty:
                 # Task has not been activated yet or all jobs are finished
                 remaining = 0
@@ -213,6 +220,9 @@ class Scheduler(ABC):
             ], ignore_index=True)
 
         # Capture processor states
+        assert self._resourceset is not None, "ResourceSet is not set. Cannot capture processor states."
+        assert self._schedule_result is not None, "Schedule result is not set. Cannot capture processor states."
+        assert self._schedule_current is not None, "Schedule current is not set. Cannot capture processor states."
         for processor in [res for res in self._resourceset.resources if res.type == ResourceType.Processor]:
             task_scheduled = ""
             remaining_mem = ""
@@ -227,7 +237,7 @@ class Scheduler(ABC):
                 job_scheduled = scheduled_jobs["Job"].iloc[0]
                 task_name = self._schedule_current.loc[job_scheduled]["Task"]
                 job_current_phase = self._schedule_current.loc[job_scheduled]["Phase"]
-                task = self._taskset.get_task(task_name)
+                task = self._taskset.get_task(str(task_name))
                 if task.phases[job_current_phase].ressource_type == ResourceType.Memory:
                     remaining_mem = self._schedule_current.loc[job_scheduled, "Request"]
             #if (task_scheduled is not None) or (remaining_mem is not None):
@@ -244,8 +254,8 @@ class Scheduler(ABC):
             ], ignore_index=True)
 
         return current_state
-
-    def _is_repeated_state(self, state: pd.DataFrame = None) -> bool:
+    
+    def _is_repeated_state(self, state: Optional[pd.DataFrame] = None) -> bool:
         """Check if the current state matches any previous state."""
         # Ensure the state is valid for comparison
         if state is None or state.empty:
@@ -298,6 +308,8 @@ class Scheduler(ABC):
         Parameters:
         - filename (str): The name of the file to save the configuration.
         """
+        assert self._taskset is not None, "TaskSet is not set. Cannot export configuration."
+        assert self._resourceset is not None, "ResourceSet is not set. Cannot export configuration."
         configuration = {
             "tasks": [task.to_dict() for task in self._taskset.tasks],
             "nb_processors": len(self._resourceset.resources),
@@ -339,6 +351,9 @@ class Scheduler(ABC):
         logger.info(f"Scheduler reloaded. Current time set to {self._current_time}.")
 
     def _schedule_next(self):
+        assert self._taskset is not None, "TaskSet is not set. Cannot schedule tasks."
+        assert self._resourceset is not None, "ResourceSet is not set. Cannot schedule resources."
+        assert self._schedule_current is not None, "Schedule current is not set. Cannot schedule tasks."
         self._schedule_current["Executed"] = False
 
         # Update schedule current with new task activations
@@ -405,7 +420,9 @@ class Scheduler(ABC):
 
             task_name = self._schedule_current.loc[job]["Task"]
             job_current_phase = self._schedule_current.loc[job]["Phase"]
-            task = self._taskset.get_task(task_name)
+            if isinstance(job_current_phase, pd.Series):
+                job_current_phase = job_current_phase.iloc[0]
+            task = self._taskset.get_task(str(task_name))
             task_resource_types = [task.phases[job_current_phase].ressource_type]
             if self._memory_use_processor and task.phases[job_current_phase].ressource_type == ResourceType.Memory:
                 task_resource_types.append(ResourceType.Processor)
@@ -429,7 +446,7 @@ class Scheduler(ABC):
 
         # Check for missed deadlines
         for job in self._schedule_current.index.tolist():
-            if self._current_time + 1 >= self._schedule_current.loc[job, "AbsoluteDeadline"] and self._schedule_current.loc[job, "Request"] > 0:
+            if self._current_time + 1 >= self._schedule_current.loc[job, "AbsoluteDeadline"] and self._schedule_current.loc[job, "Request"] > 0: # type: ignore
                 task = self._taskset.get_task(self._schedule_current.loc[job]["Task"])
                 job_current_phase = self._schedule_current.loc[job]["Phase"]
                 self._schedule_result = pd.concat([
@@ -460,6 +477,7 @@ class Scheduler(ABC):
         - stop_on_repeated_state (bool): Stop scheduling if a repeated state is detected.
         - stop_on_missed_deadline (bool): Stop scheduling if a missed deadline is detected.
         """
+        assert self._schedule_current is not None, "Schedule current is not set. Cannot schedule tasks."
         self._restart_schedule()
 
         for t in range(max_time):
