@@ -32,6 +32,13 @@ class Scheduler(ABC):
         self._premption[ResourceType.Processor] = True
         self._premption[ResourceType.Memory] = True
         self._memory_use_processor = False
+        self._memory_non_resumable_global = False  # Ajout du paramètre global
+
+        # Contrôle de cohérence des options mémoire
+        if not self._premption[ResourceType.Memory] and self._memory_non_resumable_global:
+            logger.warning("premption_memory=False and memory_non_resumable_global=True are incompatible. "
+                           "Forcing premption_memory to True.")
+            self._premption[ResourceType.Memory] = True
 
         schema_schedule_current={'Job': 'string', 'Task': 'string', 'Activation': 'int', 'Phase': 'int', 'Request': 'int', 'Executed': 'bool', 'NonPreemptiveResource': 'string', 'AbsoluteDeadline': 'int'}
         self._schedule_current = pd.DataFrame(columns=list(schema_schedule_current.keys())).astype(schema_schedule_current)
@@ -97,12 +104,28 @@ class Scheduler(ABC):
     def repeated_states(self):
         return self._repeated_states
     
-    def configure(self, taskset, resourceset, premption_processor=True, premption_memory=True, memory_use_processor=False):
+    @property
+    def memory_non_resumable_global(self):
+        return self._memory_non_resumable_global
+
+    @memory_non_resumable_global.setter
+    def memory_non_resumable_global(self, value: bool):
+        self._memory_non_resumable_global = value
+
+    def configure(self, taskset, resourceset, premption_processor=True, premption_memory=True, memory_use_processor=False, memory_non_resumable_global=False):
         self._taskset = taskset
         self._resourceset = resourceset
         self._premption[ResourceType.Processor] = premption_processor
         self._premption[ResourceType.Memory] = premption_memory
         self._memory_use_processor = memory_use_processor
+        self._memory_non_resumable_global = memory_non_resumable_global
+
+        # Contrôle de cohérence des options mémoire
+        if not self._premption[ResourceType.Memory] and self._memory_non_resumable_global:
+            logger.warning("premption_memory=False and memory_non_resumable_global=True are incompatible. "
+                           "Forcing premption_memory to True.")
+            self._premption[ResourceType.Memory] = True
+
         self._restart_schedule()
     
     def configure_json(self, data_json: dict):
@@ -117,6 +140,14 @@ class Scheduler(ABC):
         if (isinstance(data_json["memory_use_processor"], str)):
             data_json["memory_use_processor"] = data_json["memory_use_processor"]=="True"
         self._memory_use_processor = data_json["memory_use_processor"]
+        self._memory_non_resumable_global = data_json.get("memory_non_resumable_global", False)
+
+        # Contrôle de cohérence des options mémoire
+        if not self._premption[ResourceType.Memory] and self._memory_non_resumable_global:
+            logger.warning("premption_memory=False and memory_non_resumable_global=True are incompatible. "
+                           "Forcing premption_memory to True.")
+            self._premption[ResourceType.Memory] = True
+
         self._restart_schedule()
 
     
@@ -141,7 +172,7 @@ class Scheduler(ABC):
             job_current_phase = job_current_phase.iloc[0]
         task = self._taskset.get_task(str(task_name))
         assert task is not None, f"Task {task_name} not found in TaskSet."
-        task_resource_type = task.phases[int(job_current_phase)].ressource_type 
+        task_resource_type = task.phases[int(job_current_phase)].ressource_type
 
         self._schedule_current.loc[job, "NonPreemptiveResource"] = ""
         for resource in resources:
@@ -447,6 +478,40 @@ class Scheduler(ABC):
                 self._schedule_job_on_resources(selected_resource, job)
                 for ressource in selected_resource:
                     available_resources.remove(ressource)
+
+        # Handle non-resumable memory phase preemptions
+        for job in self._schedule_current.index:
+            job_row = self._schedule_current.loc[job]
+            task = self._taskset.get_task(job_row["Task"])
+            assert task is not None, f"Task {job_row['Task']} not found in TaskSet."
+            phase = task.phases[job_row["Phase"]]
+            # Check if job is in a memory phase and active
+            if phase.ressource_type == ResourceType.Memory and job_row["Request"] > 0:
+                # Check if non-resumable (global or local)
+                is_non_resumable = self._memory_non_resumable_global or not phase.resumable
+                if is_non_resumable:
+                    # Was scheduled at t-1 but not at t
+                    was_scheduled = False
+                    if self._schedule_result is not None and self._current_time > 0:
+                        prev_time = self._current_time - 1
+                        prev_sched = self._schedule_result[
+                            (self._schedule_result["Job"] == job) &
+                            (self._schedule_result["Start"] == prev_time) &
+                            (self._schedule_result["Resource"] != "")
+                        ]
+                        was_scheduled = not prev_sched.empty
+                    is_scheduled_now = False
+                    if self._schedule_result is not None:
+                        curr_sched = self._schedule_result[
+                            (self._schedule_result["Job"] == job) &
+                            (self._schedule_result["Start"] == self._current_time) &
+                            (self._schedule_result["Resource"] != "")
+                        ]
+                        is_scheduled_now = not curr_sched.empty
+                    if was_scheduled and not is_scheduled_now and (self._schedule_current.loc[job, "Request"] != phase.duration):
+                        # Preempted and non-resumable: reset phase duration
+                        self._schedule_current.loc[job, "Request"] = phase.duration
+                        logger.info(f"At time {self._current_time}, Job {job} memory phase non resumable: reset to full duration after preemption.")
 
         # Check for missed deadlines
         for job in self._schedule_current.index.tolist():

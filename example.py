@@ -23,7 +23,7 @@ datajson = {
     "scheduler": "DM",
     "premption_processor": True,
     "premption_memory": False,
-    "memory_use_processor": "True",
+    "memory_use_processor": True,
     "nb_processors" : 1,
     "tasks": [
         {
@@ -47,7 +47,7 @@ datajson = {
     "scheduler": "DM",
     "premption_processor": True,
     "premption_memory": False,
-    "memory_use_processor": "True",
+    "memory_use_processor": True,
     "nb_processors" : 1,
     "tasks": [
         {"Name": "T1", "O": 2, "R": 2, "E": 2, "W": 1, "D": 9, "T": 10},
@@ -61,11 +61,41 @@ datajson = {
     "scheduler": "DM",
     "premption_processor": True,
     "premption_memory": False,
-    "memory_use_processor": "True",
+    "memory_use_processor": True,
+    "memory_non_resumable_global": False,
     "nb_processors" : 1,
     "tasks": [
         {"Name": "T1", "O": 4, "R": 2, "E": 2, "W": 1, "D": 9, "T": 10},
         {"Name": "T2", "O": 3, "R": 2, "E": 2, "W": 1, "D": 10, "T": 10}
+    ],
+}
+
+datajson = {
+    "max_time": 30,
+    "scheduler": "DM",
+    "premption_processor": True,
+    "premption_memory": True,
+    "memory_use_processor": True,
+    "memory_non_resumable_global": True,
+    "nb_processors" : 1,
+    "tasks": [
+        {"Name": "T1", "O": 1, "R": 1, "E": 2, "W": 1, "D": 9, "T": 12},
+        {"Name": "T2", "O": 0, "R": 2, "E": 2, "W": 1, "D": 10, "T": 10}
+    ],
+}
+
+datajson2 = {
+    "max_time": 30,
+    "scheduler": "DM",
+    "premption_processor": True,
+    "premption_memory": True,
+    "memory_use_processor": True,
+    "memory_non_resumable_global": True,
+    "nb_processors" : 1,
+    "tasks": [
+        {"Name": "T1", "O": 1, "R": 1, "E": 1, "W": 1, "D": 9, "T": 15},
+        {"Name": "T2", "O": 0, "R": 2, "E": 1, "W": 1, "D": 10, "T": 10},
+        {"Name": "T3", "O": 5, "R": 2, "E": 1, "W": 1, "D": 20, "T": 20}
     ],
 }
 

@@ -4,14 +4,16 @@ class TaskPhase:
     _ressource_type = ResourceType.Processor
     _duration = 0
     _premption = True
+    _resumable = True  # True = resumable, False = non resumable
 
-    def __init__(self, ressource_type: ResourceType, duration: int, premption: bool):
+    def __init__(self, ressource_type: ResourceType, duration: int, premption: bool, resumable: bool = True):
         self._ressource_type = ressource_type
         self._duration = duration
         self._premption = premption
+        self._resumable = resumable  # True = resumable, False = non resumable
 
     def __str__(self):
-        return "[Type = " + str(self._ressource_type.name) + ", duration = " + str(self._duration) + ", premption = " + str(self._premption) + "]"
+        return "[Type = " + str(self._ressource_type.name) + ", duration = " + str(self._duration) + ", premption = " + str(self._premption) + ", resumable = " + str(self._resumable) + "]"
 
     @property
     def ressource_type(self) -> ResourceType:
@@ -37,6 +39,14 @@ class TaskPhase:
     def premption(self, value: bool):
         self._premption = value
 
+    @property
+    def resumable(self) -> bool:
+        return self._resumable
+
+    @resumable.setter
+    def resumable(self, value: bool):
+        self._resumable = value
+
 class Task:
     _name = ""
     _first_activation = 0
@@ -61,8 +71,8 @@ class Task:
             string += "\t\t" + phase.__str__() + "\n"
         return string
 
-    def add_phase(self, ressource_type: ResourceType, duration: int, premption: bool):
-        self._phases.append(TaskPhase(ressource_type, duration, premption))
+    def add_phase(self, ressource_type: ResourceType, duration: int, premption: bool, resumable: bool = True):
+        self._phases.append(TaskPhase(ressource_type, duration, premption, resumable))
 
     @property
     def name(self):
@@ -111,7 +121,8 @@ class Task:
                 {
                     "Type": phase.ressource_type.name,
                     "Duration": phase.duration,
-                    "Premption": phase.premption
+                    "Premption": phase.premption,
+                    "Resumable": phase.resumable
                 }
                 for phase in self._phases
             ]
